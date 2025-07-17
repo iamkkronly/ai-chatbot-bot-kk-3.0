@@ -1,143 +1,113 @@
-import { Telegraf } from "telegraf";
-import fetch from "node-fetch";
-import { MongoClient } from "mongodb";
+const TelegramBot = require('node-telegram-bot-api');
+const mongoose = require('mongoose');
+const axios = require('axios');
+const express = require('express');
 
-// ======= Configuration ========
-const BOT_TOKEN = "7900951388:AAEBiGs9fCPBgZR6unvA8zcqfvRoR5yxiJw";
-const MONGO_URI = "mongodb+srv://p9ks947:Jkg6FSdWBnstOI5w@cluster0.9ftafq6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
-const DB_NAME = "chatbotdb";
-const APIKEY_COLLECTION = "apikeys";
-const HISTORY_COLLECTION = "history";
+// Start dummy HTTP server to keep Render Web Service alive
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (_, res) => res.send('Bot is running.'));
+app.listen(PORT, () => console.log(`🌐 HTTP server running on port ${PORT}`));
+
+// Configs
+const BOT_TOKEN = '7900951388:AAEBiGs9fCPBgZR6unvA8zcqfvRoR5yxiJw';
+const MONGODB_URI = 'mongodb+srv://p9ks947:Jkg6FSdWBnstOI5w@cluster0.9ftafq6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const ADMIN_ID = 7307633923;
-const SITE_URL = "https://your-site.com"; // Optional
-const SITE_TITLE = "MyAIChatBot";         // Optional
-// ==============================
 
-const bot = new Telegraf(BOT_TOKEN);
-const client = new MongoClient(MONGO_URI);
+// MongoDB Schemas
+const apiKeySchema = new mongoose.Schema({ key: String });
+const ApiKey = mongoose.model('ApiKey', apiKeySchema);
 
-let db, keyCollection, historyCollection;
-
-async function init() {
-  await client.connect();
-  db = client.db(DB_NAME);
-  keyCollection = db.collection(APIKEY_COLLECTION);
-  historyCollection = db.collection(HISTORY_COLLECTION);
-  scheduleDailyReactivation();
-  bot.launch();
-}
-init();
-
-async function addApiKey(key) {
-  await keyCollection.updateOne(
-    { key },
-    { $set: { key, active: true, added: new Date() } },
-    { upsert: true }
-  );
-}
-
-async function getActiveKeys() {
-  return await keyCollection.find({ active: true }).sort({ added: 1 }).toArray();
-}
-
-async function disableKey(key) {
-  await keyCollection.updateOne({ key }, { $set: { active: false } });
-}
-
-async function reactivateAllKeys() {
-  try {
-    const result = await keyCollection.updateMany({}, { $set: { active: true } });
-    console.log(`Reactivated ${result.modifiedCount} API keys.`);
-  } catch (error) {
-    console.error("Failed to reactivate API keys:", error);
-  }
-}
-
-function scheduleDailyReactivation() {
-  const now = new Date();
-  const millisTillMidnight =
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0) - now;
-
-  setTimeout(function () {
-    reactivateAllKeys();
-    setInterval(reactivateAllKeys, 24 * 60 * 60 * 1000);
-  }, millisTillMidnight);
-}
-
-async function updateHistory(userId, role, content) {
-  const record = await historyCollection.findOne({ _id: userId }) || { messages: [] };
-  const updated = [...record.messages, { role, content }];
-  const recent = updated.slice(-5);
-  await historyCollection.updateOne(
-    { _id: userId },
-    { $set: { messages: recent } },
-    { upsert: true }
-  );
-}
-
-async function getHistory(userId) {
-  const record = await historyCollection.findOne({ _id: userId });
-  return record?.messages || [];
-}
-
-// Command: /add <API_KEY>
-bot.command("add", async (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return ctx.reply("Unauthorized. Admin only.");
-  const parts = ctx.message.text.trim().split(" ");
-  if (parts.length !== 2) return ctx.reply("Usage: /add <OPENROUTER_API_KEY>");
-  await addApiKey(parts[1]);
-  ctx.reply("API key has been saved and activated.");
+const userSchema = new mongoose.Schema({
+  userId: Number,
+  messages: [{ role: String, content: String }]
 });
+const UserHistory = mongoose.model('UserHistory', userSchema);
 
-// Main logic on user text input
-bot.on("text", async (ctx) => {
-  const userId = ctx.from.id.toString();
-  const userMessage = ctx.message.text;
-  const history = await getHistory(userId);
-  const fullMessages = [...history, { role: "user", content: userMessage }];
-  const apiKeys = await getActiveKeys();
+// Bot Setup
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+let apiKeys = [];
 
-  if (apiKeys.length === 0) return ctx.reply("No working API keys available. Contact admin.");
+(async () => {
+  await mongoose.connect(MONGODB_URI);
+  const keys = await ApiKey.find();
+  apiKeys = keys.map(doc => doc.key);
+  console.log('✅ MongoDB connected. API Keys loaded.');
+})();
 
-  let success = false;
-  let aiReply = "";
-
-  for (const { key } of apiKeys) {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${key}`,
-          "HTTP-Referer": SITE_URL,
-          "X-Title": SITE_TITLE,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "deepseek/deepseek-r1-0528:free",
-          messages: fullMessages
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.choices?.[0]?.message?.content) {
-        aiReply = data.choices[0].message.content;
-        await updateHistory(userId, "user", userMessage);
-        await updateHistory(userId, "assistant", aiReply);
-        success = true;
-        break;
-      } else {
-        await disableKey(key);
+// Retry-enabled OpenRouter API Call
+async function queryOpenRouter(messages) {
+  let lastError;
+  for (let i = 0; i < apiKeys.length; i++) {
+    const apiKey = apiKeys[i];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            model: 'deepseek/deepseek-r1-0528:free',
+            messages: messages
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://your-site.com',
+              'X-Title': 'Telegram AI Bot'
+            },
+            timeout: 30000
+          }
+        );
+        return response.data.choices[0].message.content;
+      } catch (error) {
+        lastError = error;
+        console.warn(`API Key ${i + 1} attempt ${attempt} failed: ${error.message}`);
+        await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)));
       }
-    } catch (error) {
-      console.error(`Key failed: ${key}`, error.message);
-      await disableKey(key);
     }
   }
+  throw new Error(`All API keys failed. Last error: ${lastError.message}`);
+}
 
-  if (success) {
-    ctx.reply(aiReply);
-  } else {
-    ctx.reply("All API keys failed. Contact the admin to add a working one.");
+// Add API Key (Admin only)
+bot.onText(/\/add (.+)/, async (msg, match) => {
+  if (msg.from.id !== ADMIN_ID) return bot.sendMessage(msg.chat.id, '❌ Unauthorized.');
+  const newKey = match[1].trim();
+  if (apiKeys.includes(newKey)) {
+    return bot.sendMessage(msg.chat.id, '⚠️ API key already exists.');
+  }
+  await ApiKey.create({ key: newKey });
+  apiKeys.push(newKey);
+  bot.sendMessage(msg.chat.id, '✅ API key added and stored.');
+});
+
+// Handle user messages
+bot.on('message', async msg => {
+  if (!msg.text || msg.text.startsWith('/')) return;
+  const userId = msg.from.id;
+  const userMessage = msg.text;
+
+  try {
+    let history = await UserHistory.findOne({ userId });
+    if (!history) {
+      history = await UserHistory.create({ userId, messages: [] });
+    }
+
+    history.messages.push({ role: 'user', content: userMessage });
+    if (history.messages.length > 10) {
+      history.messages = history.messages.slice(-10);
+    }
+
+    const reply = await queryOpenRouter(history.messages);
+    history.messages.push({ role: 'assistant', content: reply });
+    if (history.messages.length > 10) {
+      history.messages = history.messages.slice(-10);
+    }
+
+    await history.save();
+    bot.sendMessage(msg.chat.id, reply);
+  } catch (err) {
+    console.error('❌ Error:', err.message);
+    bot.sendMessage(msg.chat.id, '⚠️ Failed to get response. Try again later.');
   }
 });
