@@ -67,7 +67,7 @@ async function queryGemini(messages) {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const res = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
           {
             contents: [{
               role: "user",
