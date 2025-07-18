@@ -43,7 +43,7 @@ setInterval(() => {
 
 
 // Configs
-const BOT_TOKEN = '7900951388:AAHRFwSwIrdDpW0CzzW9Jdi954uC6AE2MXA';
+const BOT_TOKEN = '7900951388:AAHd4dfA5ZJvq-46T7qo3kybqN2wK0SowLQ';
 const MONGODB_URI = 'mongodb+srv://p9ks947:Jkg6FSdWBnstOI5w@cluster0.9ftafq6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const ADMIN_ID = 7307633923;
 
@@ -149,21 +149,16 @@ bot.on('message', async msg => {
     const messageId = sentMsg.message_id;
 
     for (const word of words) {
-        builtString += word + ' ';
-        // Edit the message with the incrementally built string
-        // A try/catch block handles potential API rate limit errors
-        try {
-            await bot.editMessageText(builtString, { chat_id: chatId, message_id: messageId });
-            // A short delay to create a high-speed typing effect and avoid API limits
-            await new Promise(r => setTimeout(r, 80)); // 80ms delay
-        } catch (error) {
-            if (error.response && error.response.body.description.includes('message is not modified')) {
-                // Ignore this error, it just means we tried to edit with the same text
-                continue;
-            }
-            // For other errors, log them but don't stop the bot
-            console.error('Error editing message:', error.message);
+      builtString += word + ' ';
+      try {
+        await bot.editMessageText(builtString, { chat_id: chatId, message_id: messageId });
+        await new Promise(r => setTimeout(r, 30)); // Reduced delay for faster response
+      } catch (error) {
+        if (error.response && error.response.body.description.includes('message is not modified')) {
+          continue;
         }
+        console.error('Error editing message:', error.message);
+      }
     }
     // ================= END OF STREAMING LOGIC =================
 
