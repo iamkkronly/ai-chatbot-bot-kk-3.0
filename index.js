@@ -15,10 +15,10 @@ app.listen(PORT, () => console.log(`🌐 HTTP server running on port ${PORT}`));
 // =================================================================
 
 // --- 1. Scheduled Restart (every 30 minutes) ---
-const RESTART_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const RESTART_INTERVAL_MS = 30 * 60 * 1000;
 setTimeout(() => {
   console.log('🕒 [Health Check] Performing scheduled 30-minute restart...');
-  process.exit(1); // Exit process, Render will auto-restart it
+  process.exit(1);
 }, RESTART_INTERVAL_MS);
 
 // --- 2. Memory-Based Restart (if usage > 60%) ---
@@ -33,21 +33,18 @@ setInterval(() => {
 
   if (usedMemoryPercent > MEMORY_THRESHOLD_PERCENT) {
     console.error(`🚨 [Health Check] Memory usage exceeds ${MEMORY_THRESHOLD_PERCENT}%. Restarting...`);
-    process.exit(1); // Exit process, Render will auto-restart it
+    process.exit(1);
   }
-}, 30000); // Check memory every 30 seconds
+}, 30000);
 
 // =================================================================
 // ================== END OF HEALTH CHECK LOGIC ==================
 // =================================================================
 
-
-// Configs
-const BOT_TOKEN = '7900951388:AAHd4dfA5ZJvq-46T7qo3kybqN2wK0SowLQ';
+const BOT_TOKEN = '7900951388:AAH1VtzTZhPFa2djqAfpjqDhBEmwjs1hFOM';
 const MONGODB_URI = 'mongodb+srv://p9ks947:Jkg6FSdWBnstOI5w@cluster0.9ftafq6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const ADMIN_ID = 7307633923;
 
-// MongoDB Schemas
 const apiKeySchema = new mongoose.Schema({ key: String });
 const ApiKey = mongoose.model('ApiKey', apiKeySchema);
 
@@ -57,7 +54,6 @@ const userSchema = new mongoose.Schema({
 });
 const UserHistory = mongoose.model('UserHistory', userSchema);
 
-// Bot Setup
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 let apiKeys = [];
 
@@ -68,7 +64,7 @@ let apiKeys = [];
   console.log('✅ MongoDB connected. API Keys loaded.');
 })();
 
-// Retry-enabled OpenRouter API Call
+// ✅ Updated to use model: google/gemma-3n-e2b-it:free
 async function queryOpenRouter(messages) {
   let lastError;
   for (let i = 0; i < apiKeys.length; i++) {
@@ -78,7 +74,7 @@ async function queryOpenRouter(messages) {
         const response = await axios.post(
           'https://openrouter.ai/api/v1/chat/completions',
           {
-            model: 'deepseek/deepseek-r1-0528:free',
+            model: 'google/gemma-3n-e2b-it:free',
             messages: messages
           },
           {
@@ -102,7 +98,6 @@ async function queryOpenRouter(messages) {
   throw new Error(`All API keys failed. Last error: ${lastError.message}`);
 }
 
-// Add API Key (Admin only)
 bot.onText(/\/add (.+)/, async (msg, match) => {
   if (msg.from.id !== ADMIN_ID) return bot.sendMessage(msg.chat.id, '❌ Unauthorized.');
   const newKey = match[1].trim();
@@ -114,7 +109,6 @@ bot.onText(/\/add (.+)/, async (msg, match) => {
   bot.sendMessage(msg.chat.id, '✅ API key added and stored.');
 });
 
-// Handle user messages
 bot.on('message', async msg => {
   if (!msg.text || msg.text.startsWith('/')) return;
   const userId = msg.from.id;
@@ -140,11 +134,8 @@ bot.on('message', async msg => {
 
     await history.save();
 
-    // =========== NEW WORD-BY-WORD STREAMING LOGIC ===========
     const words = reply.split(' ');
     let builtString = '';
-    
-    // Send an initial message to get a message_id. Using a subtle emoji.
     const sentMsg = await bot.sendMessage(chatId, '✍️');
     const messageId = sentMsg.message_id;
 
@@ -152,7 +143,7 @@ bot.on('message', async msg => {
       builtString += word + ' ';
       try {
         await bot.editMessageText(builtString, { chat_id: chatId, message_id: messageId });
-        await new Promise(r => setTimeout(r, 30)); // Reduced delay for faster response
+        await new Promise(r => setTimeout(r, 30)); // fast streaming
       } catch (error) {
         if (error.response && error.response.body.description.includes('message is not modified')) {
           continue;
@@ -160,7 +151,6 @@ bot.on('message', async msg => {
         console.error('Error editing message:', error.message);
       }
     }
-    // ================= END OF STREAMING LOGIC =================
 
   } catch (err) {
     console.error('❌ Error:', err.message);
