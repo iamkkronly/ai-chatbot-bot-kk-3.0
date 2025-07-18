@@ -9,6 +9,7 @@
     "axios": "^1.6.8",
     "express": "^4.19.2",
     "mongoose": "^8.3.4",
-    "node-telegram-bot-api": "^0.61.0"
+    "node-telegram-bot-api": "^0.61.0",
+    "os": "^0.1.2"
   }
 }
