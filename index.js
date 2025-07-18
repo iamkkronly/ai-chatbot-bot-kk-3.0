@@ -2,12 +2,45 @@ const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 const axios = require('axios');
 const express = require('express');
+const os = require('os');
 
 // Start dummy HTTP server to keep Render Web Service alive
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (_, res) => res.send('Bot is running.'));
 app.listen(PORT, () => console.log(`🌐 HTTP server running on port ${PORT}`));
+
+// =================================================================
+// ============== AUTO-RESTART & HEALTH CHECK LOGIC ==============
+// =================================================================
+
+// --- 1. Scheduled Restart (every 30 minutes) ---
+const RESTART_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+setTimeout(() => {
+  console.log('🕒 [Health Check] Performing scheduled 30-minute restart...');
+  process.exit(1); // Exit process, Render will auto-restart it
+}, RESTART_INTERVAL_MS);
+
+// --- 2. Memory-Based Restart (if usage > 60%) ---
+const MEMORY_THRESHOLD_PERCENT = 60;
+setInterval(() => {
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  const usedMemory = totalMemory - freeMemory;
+  const usedMemoryPercent = (usedMemory / totalMemory) * 100;
+
+  console.log(`🧠 [Health Check] Memory Usage: ${usedMemoryPercent.toFixed(2)}%`);
+
+  if (usedMemoryPercent > MEMORY_THRESHOLD_PERCENT) {
+    console.error(`🚨 [Health Check] Memory usage exceeds ${MEMORY_THRESHOLD_PERCENT}%. Restarting...`);
+    process.exit(1); // Exit process, Render will auto-restart it
+  }
+}, 30000); // Check memory every 30 seconds
+
+// =================================================================
+// ================== END OF HEALTH CHECK LOGIC ==================
+// =================================================================
+
 
 // Configs
 const BOT_TOKEN = '7900951388:AAEBiGs9fCPBgZR6unvA8zcqfvRoR5yxiJw';
