@@ -43,7 +43,7 @@ setInterval(() => {
 
 
 // Configs
-const BOT_TOKEN = '7900951388:AAEBiGs9fCPBgZR6unvA8zcqfvRoR5yxiJw';
+const BOT_TOKEN = '7900951388:AAG-bnCWJTsj2QE2r5HDp_3gzQStOM0AoMs';
 const MONGODB_URI = 'mongodb+srv://p9ks947:Jkg6FSdWBnstOI5w@cluster0.9ftafq6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const ADMIN_ID = 7307633923;
 
