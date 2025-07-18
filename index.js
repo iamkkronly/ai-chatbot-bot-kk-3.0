@@ -43,7 +43,7 @@ setInterval(() => {
 
 
 // Configs
-const BOT_TOKEN = '7900951388:AAG-bnCWJTsj2QE2r5HDp_3gzQStOM0AoMs';
+const BOT_TOKEN = '7900951388:AAHRFwSwIrdDpW0CzzW9Jdi954uC6AE2MXA';
 const MONGODB_URI = 'mongodb+srv://p9ks947:Jkg6FSdWBnstOI5w@cluster0.9ftafq6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const ADMIN_ID = 7307633923;
 
@@ -119,6 +119,7 @@ bot.on('message', async msg => {
   if (!msg.text || msg.text.startsWith('/')) return;
   const userId = msg.from.id;
   const userMessage = msg.text;
+  const chatId = msg.chat.id;
 
   try {
     let history = await UserHistory.findOne({ userId });
@@ -138,9 +139,36 @@ bot.on('message', async msg => {
     }
 
     await history.save();
-    bot.sendMessage(msg.chat.id, reply);
+
+    // =========== NEW WORD-BY-WORD STREAMING LOGIC ===========
+    const words = reply.split(' ');
+    let builtString = '';
+    
+    // Send an initial message to get a message_id. Using a subtle emoji.
+    const sentMsg = await bot.sendMessage(chatId, '✍️');
+    const messageId = sentMsg.message_id;
+
+    for (const word of words) {
+        builtString += word + ' ';
+        // Edit the message with the incrementally built string
+        // A try/catch block handles potential API rate limit errors
+        try {
+            await bot.editMessageText(builtString, { chat_id: chatId, message_id: messageId });
+            // A short delay to create a high-speed typing effect and avoid API limits
+            await new Promise(r => setTimeout(r, 80)); // 80ms delay
+        } catch (error) {
+            if (error.response && error.response.body.description.includes('message is not modified')) {
+                // Ignore this error, it just means we tried to edit with the same text
+                continue;
+            }
+            // For other errors, log them but don't stop the bot
+            console.error('Error editing message:', error.message);
+        }
+    }
+    // ================= END OF STREAMING LOGIC =================
+
   } catch (err) {
     console.error('❌ Error:', err.message);
-    bot.sendMessage(msg.chat.id, '⚠️ Failed to get response. Try again later.');
+    bot.sendMessage(chatId, '⚠️ Failed to get response. Try again later.');
   }
 });
